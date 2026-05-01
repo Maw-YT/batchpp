@@ -1,0 +1,129 @@
+{
+  "name": "Batch++",
+  "scopeName": "source.batchpp",
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#types"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#variables"
+    },
+    {
+      "include": "#functions"
+    },
+    {
+      "include": "#directives"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.batchpp",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.batchpp",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.triple.batchpp",
+          "begin": "\"\"\"",
+          "end": "\"\"\""
+        },
+        {
+          "name": "string.quoted.double.batchpp",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.batchpp",
+              "match": "\\\\."
+            },
+            {
+              "name": "variable.interpolation.batchpp",
+              "match": "\\$\\{[^}]+\\}"
+            }
+          ]
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.batchpp",
+          "match": "\\b(import|module|fn|macro|inline|export|return|if|else|match|case|default|try|catch|finally|throw|assert|while|for|in|to|break|continue|new)\\b"
+        },
+        {
+          "name": "keyword.declaration.batchpp",
+          "match": "\\b(let|var|const|arr|map|slice|struct|st|enum|class|obj)\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "entity.name.type.batchpp",
+          "match": "\\b[A-Z][A-Za-z0-9_]*\\b"
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.batchpp",
+          "match": "\\b\\d+\\b"
+        }
+      ]
+    },
+    "variables": {
+      "patterns": [
+        {
+          "name": "variable.other.batchpp",
+          "match": "%[A-Za-z_][A-Za-z0-9_\\.\\[\\]]*%"
+        },
+        {
+          "name": "variable.parameter.batchpp",
+          "match": "\\$\\{[A-Za-z_][A-Za-z0-9_\\.\\[\\]]*\\}"
+        }
+      ]
+    },
+    "functions": {
+      "patterns": [
+        {
+          "name": "entity.name.function.batchpp",
+          "match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(?=\\()"
+        },
+        {
+          "name": "support.function.batchpp",
+          "match": "\\b(len|str_trim|str_contains|str_replace|token|after|startswith|input|input\\?)\\b"
+        }
+      ]
+    },
+    "directives": {
+      "patterns": [
+        {
+          "name": "meta.preprocessor.batchpp",
+          "match": "^\\s*#(!?batpp|encoding\\b.*|pause-on\\b|pause-off\\b).*$"
+        }
+      ]
+    }
+  }
+}

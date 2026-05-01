@@ -1,0 +1,53 @@
+{
+  "name": "batchpp-support",
+  "displayName": "Batch++ Support",
+  "description": "Language support for Batch++ (.batpp/.cmdpp) in VS Code and Cursor.",
+  "version": "0.0.1",
+  "publisher": "whymr",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:batchpp",
+    "onCommand:batchpp.compileCurrentFile"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "batchpp",
+        "aliases": [
+          "Batch++",
+          "batchpp"
+        ],
+        "extensions": [
+          ".batpp",
+          ".cmdpp"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "batchpp",
+        "scopeName": "source.batchpp",
+        "path": "./syntaxes/batpp.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "batchpp",
+        "path": "./snippets/batpp.code-snippets"
+      }
+    ],
+    "commands": [
+      {
+        "command": "batchpp.compileCurrentFile",
+        "title": "Batch++: Compile Current File"
+      }
+    ]
+  }
+}
