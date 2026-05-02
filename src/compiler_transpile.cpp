@@ -1,6 +1,11 @@
 #include "compiler_internal.hpp"
+#include <functional>
 
 std::string Compiler::replaceArrayAccess(std::string s) {
+    std::regex arrNestedAccess(R"(%([A-Za-z_]\w*)\[(\d+)\]\[(\d+)\]%)");
+    while (std::regex_search(s, arrNestedAccess)) {
+        s = std::regex_replace(s, arrNestedAccess, "%__arr_$1_$2_$3%");
+    }
     std::regex arrAccess(R"(%([A-Za-z_]\w*)\[(\d+)\]%)");
     while (std::regex_search(s, arrAccess)) s = std::regex_replace(s, arrAccess, "%__arr_$1_$2%");
     return s;
@@ -15,6 +20,9 @@ std::string Compiler::replaceThisAccess(std::string s) {
 std::string Compiler::replaceInterpolationSyntax(std::string s) {
     std::regex thisInterp(R"(\$\{this\.([A-Za-z_]\w*)\})");
     while (std::regex_search(s, thisInterp)) s = std::regex_replace(s, thisInterp, "!__obj_%__this%_$1!");
+
+    std::regex arrNestedInterp(R"(\$\{([A-Za-z_]\w*)\[(\d+)\]\[(\d+)\]\})");
+    while (std::regex_search(s, arrNestedInterp)) s = std::regex_replace(s, arrNestedInterp, "%__arr_$1_$2_$3%");
 
     std::regex arrInterp(R"(\$\{([A-Za-z_]\w*)\[(\d+)\]\})");
     while (std::regex_search(s, arrInterp)) s = std::regex_replace(s, arrInterp, "%__arr_$1_$2%");
@@ -51,6 +59,65 @@ std::vector<std::string> Compiler::transpileLine(const std::string& rawLine, con
     if (line.empty() || startsWith(line, "//")) return {};
     std::smatch m;
     const std::string callerMod = moduleName.empty() ? "main" : moduleName;
+    auto tryParseCallExpr = [&](const std::string& raw, std::string& calleeModOut, std::string& fnameOut,
+                                std::vector<std::string>& argsOut) -> bool {
+        std::string s = trim(raw);
+        if (s.empty()) return false;
+        size_t openPos = std::string::npos;
+        int quote = 0;
+        for (size_t i = 0; i < s.size(); ++i) {
+            char c = s[i];
+            if (c == '"' && (i == 0 || s[i - 1] != '\\')) {
+                quote = 1 - quote;
+                continue;
+            }
+            if (quote == 0 && c == '(') {
+                openPos = i;
+                break;
+            }
+        }
+        if (openPos == std::string::npos || openPos == 0) return false;
+        if (trim(s.substr(s.size() - 1)) != ")") return false;
+
+        size_t closePos = s.size() - 1;
+        int depth = 0;
+        quote = 0;
+        bool foundMatch = false;
+        for (size_t i = openPos; i < s.size(); ++i) {
+            char c = s[i];
+            if (c == '"' && (i == 0 || s[i - 1] != '\\')) {
+                quote = 1 - quote;
+                continue;
+            }
+            if (quote != 0) continue;
+            if (c == '(') depth++;
+            else if (c == ')') {
+                depth--;
+                if (depth == 0) {
+                    closePos = i;
+                    foundMatch = true;
+                    break;
+                }
+            }
+        }
+        if (!foundMatch || closePos != s.size() - 1) return false;
+
+        std::string head = trim(s.substr(0, openPos));
+        std::string argsRaw = s.substr(openPos + 1, closePos - openPos - 1);
+        if (head.empty()) return false;
+        size_t dc = head.find("::");
+        if (dc != std::string::npos) {
+            calleeModOut = trim(head.substr(0, dc));
+            fnameOut = trim(head.substr(dc + 2));
+        } else {
+            calleeModOut = callerMod;
+            fnameOut = head;
+        }
+        if (!isValidIdentifier(fnameOut)) return false;
+        if (!calleeModOut.empty() && !isValidIdentifier(calleeModOut)) return false;
+        argsOut = splitArgs(argsRaw);
+        return true;
+    };
 
     if (line == "break" || line == "break;") {
         if (!loopStack || loopStack->empty()) throw std::runtime_error("'break' outside of loop.");
@@ -149,6 +216,18 @@ std::vector<std::string> Compiler::transpileLine(const std::string& rawLine, con
     }
 
     std::regex arrAssign(R"(^([A-Za-z_]\w*)\[(\d+)\]\s*=\s*(.+)\s*$)");
+    std::regex arrNestedAssign(R"(^([A-Za-z_]\w*)\[(\d+)\]\[(\d+)\]\s*=\s*(.+)\s*$)");
+    if (std::regex_match(line, m, arrNestedAssign)) {
+        return {"set \"__arr_" + m[1].str() + "_" + m[2].str() + "_" + m[3].str() + "=" +
+                unwrapQuotedLiteral(normalizeExpr(trim(m[4].str()))) + "\""};
+    }
+
+    std::regex arrNestedDynSecondAssign(R"(^([A-Za-z_]\w*)\[(\d+)\]\[([A-Za-z_]\w*)\]\s*=\s*(.+)\s*$)");
+    if (std::regex_match(line, m, arrNestedDynSecondAssign)) {
+        return {"call :__lib_arr_set2 " + m[1].str() + " " + m[2].str() + " %" + m[3].str() + "% " +
+                unwrapQuotedLiteral(normalizeExpr(trim(m[4].str())))};
+    }
+
     if (std::regex_match(line, m, arrAssign)) {
         return {"set \"__arr_" + m[1].str() + "_" + m[2].str() + "=" + unwrapQuotedLiteral(normalizeExpr(trim(m[3].str()))) + "\""};
     }
@@ -161,11 +240,26 @@ std::vector<std::string> Compiler::transpileLine(const std::string& rawLine, con
     std::regex arrDecl(R"(^arr\s+([A-Za-z_]\w*)\s*=\s*\[(.*)\]\s*$)");
     if (std::regex_match(line, m, arrDecl)) {
         std::string name = m[1].str();
-        auto items = splitArgs(m[2].str());
-        std::vector<std::string> out;
-        out.push_back("set \"__arr_" + name + "_len=" + std::to_string(items.size()) + "\"");
-        for (size_t i = 0; i < items.size(); ++i) out.push_back("set \"__arr_" + name + "_" + std::to_string(i) + "=" + items[i] + "\"");
-        return out;
+        std::function<std::vector<std::string>(const std::string&, const std::string&)> emitArrayLiteral;
+        emitArrayLiteral = [&](const std::string& arrName, const std::string& innerRaw) -> std::vector<std::string> {
+            auto items = splitArgs(innerRaw);
+            std::vector<std::string> out;
+            out.push_back("set \"__arr_" + arrName + "_len=" + std::to_string(items.size()) + "\"");
+            for (size_t i = 0; i < items.size(); ++i) {
+                std::string item = trim(items[i]);
+                if (item.size() >= 2 && item.front() == '[' && item.back() == ']') {
+                    std::string childName = arrName + "_" + std::to_string(i);
+                    auto child = emitArrayLiteral(childName, item.substr(1, item.size() - 2));
+                    out.insert(out.end(), child.begin(), child.end());
+                    out.push_back("set \"__arr_" + arrName + "_" + std::to_string(i) + "=" + childName + "\"");
+                } else {
+                    out.push_back("set \"__arr_" + arrName + "_" + std::to_string(i) + "=" +
+                                  unwrapQuotedLiteral(normalizeExpr(item)) + "\"");
+                }
+            }
+            return out;
+        };
+        return emitArrayLiteral(name, m[2].str());
     }
 
     std::regex varDecl(R"(^((?:let|var|const))\s+([A-Za-z_]\w*)(?:\s*=\s*(.+))?\s*$)");
@@ -288,37 +382,25 @@ std::vector<std::string> Compiler::transpileLine(const std::string& rawLine, con
         return {call.str()};
     }
 
-    std::regex setFnCall(R"(^set\s+([A-Za-z_]\w*)\s*=\s*([A-Za-z_]\w*)(?:::[A-Za-z_]\w*)?\((.*)\)\s*$)");
-    if (std::regex_match(line, m, setFnCall)) {
+    std::regex setReWithRhs(R"(^set\s+([A-Za-z_]\w*)\s*=\s*(.+)\s*$)");
+    if (std::regex_match(line, m, setReWithRhs)) {
         std::string var = m[1].str();
-        std::string fname = m[2].str();
-        std::string calleeMod = callerMod;
-        if (line.find("::") != std::string::npos) {
-            size_t pos = line.find('=');
-            std::string rhs = trim(line.substr(pos + 1));
-            size_t dc = rhs.find("::");
-            calleeMod = trim(rhs.substr(0, dc));
-            std::string rest = trim(rhs.substr(dc + 2));
-            size_t p = rest.find('(');
-            fname = rest.substr(0, p);
+        std::string rhsRaw = trim(m[2].str());
+        std::string calleeMod;
+        std::string fname;
+        std::vector<std::string> args;
+        if (tryParseCallExpr(rhsRaw, calleeMod, fname, args)) {
+            return emitCallLines(callerMod, calleeMod, fname, args, &var, loopStack);
         }
-        auto args = splitArgs(m[3].str());
-        return emitCallLines(callerMod, calleeMod, fname, args, &var, loopStack);
     }
 
-    std::regex bareFnCall(R"(^([A-Za-z_]\w*)(?:::[A-Za-z_]\w*)?\((.*)\)\s*$)");
-    if (std::regex_match(line, m, bareFnCall)) {
-        std::string fname = m[1].str();
-        std::string calleeMod = callerMod;
-        if (line.find("::") != std::string::npos) {
-            size_t dc = line.find("::");
-            calleeMod = trim(line.substr(0, dc));
-            std::string rest = trim(line.substr(dc + 2));
-            size_t p = rest.find('(');
-            fname = rest.substr(0, p);
+    {
+        std::string calleeMod;
+        std::string fname;
+        std::vector<std::string> args;
+        if (tryParseCallExpr(line, calleeMod, fname, args)) {
+            return emitCallLines(callerMod, calleeMod, fname, args, nullptr, loopStack);
         }
-        auto args = splitArgs(m[2].str());
-        return emitCallLines(callerMod, calleeMod, fname, args, nullptr, loopStack);
     }
 
     std::regex setRe(R"(^set\s+([A-Za-z_]\w*)\s*=\s*(.+)\s*$)");

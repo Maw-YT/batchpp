@@ -7,22 +7,9 @@
 // Appending ` ^<nul` is a minimal no-op stdin redirect workaround (see SS64.cmd CALL notes).
 static std::string appendCallNulHack(std::string batch)
 {
-    std::string result;
-    size_t pos = 0;
-    while (pos < batch.size()) {
-        size_t nl = batch.find('\n', pos);
-        std::string line = (nl == std::string::npos) ? batch.substr(pos) : batch.substr(pos, nl - pos);
-        pos = (nl == std::string::npos) ? batch.size() : nl + 1;
-        while (!line.empty() && line.back() == '\r')
-            line.pop_back();
-        std::string t = trim(line);
-        if (startsWith(t, "call :") && !startsWith(t, "call :__main") && t.find("^<nul") == std::string::npos &&
-            t.find("<nul") == std::string::npos)
-            line += " ^<nul";
-        result += line;
-        result.push_back('\n');
-    }
-    return result;
+    // Applying stdin redirection to every `call :label` causes nested subroutine
+    // lookups to fail intermittently in deep call stacks. Keep emitted calls plain.
+    return batch;
 }
 
 void Compiler::emitFunction(std::ostringstream& out, const std::string& fullName, const FunctionDef& fn, const std::string& moduleName,
@@ -56,6 +43,9 @@ void Compiler::emitRuntimeStdlib(std::ostringstream& out) {
         stdlibEmitted_ = true;
         out << ":__lib_arr_set\n";
         out << "set \"__arr_%~1_%~2=%~3\"\n";
+        out << "exit /b 0\n\n";
+        out << ":__lib_arr_set2\n";
+        out << "set \"__arr_%~1_%~2_%~3=%~4\"\n";
         out << "exit /b 0\n\n";
         out << ":__lib_str_trim\n";
         out << "set \"_t=%~1\"\n";

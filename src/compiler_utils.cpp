@@ -146,13 +146,24 @@ std::vector<std::string> splitArgs(const std::string& raw) {
     std::vector<std::string> out;
     std::string cur;
     int quote = 0;
+    int parenDepth = 0;
+    int bracketDepth = 0;
+    int braceDepth = 0;
     for (char c : raw) {
         if (c == '"' && (cur.empty() || cur.back() != '\\')) {
             quote = 1 - quote;
             cur.push_back(c);
             continue;
         }
-        if (c == ',' && quote == 0) {
+        if (quote == 0) {
+            if (c == '(') parenDepth++;
+            else if (c == ')' && parenDepth > 0) parenDepth--;
+            else if (c == '[') bracketDepth++;
+            else if (c == ']' && bracketDepth > 0) bracketDepth--;
+            else if (c == '{') braceDepth++;
+            else if (c == '}' && braceDepth > 0) braceDepth--;
+        }
+        if (c == ',' && quote == 0 && parenDepth == 0 && bracketDepth == 0 && braceDepth == 0) {
             out.push_back(trim(cur));
             cur.clear();
             continue;
