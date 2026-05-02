@@ -1,127 +1,88 @@
-# Batch++ Compiler (MVP)
+# Batch++
 
-`batppc` transpiles `.batpp` or `.cmdpp` source files into plain `.bat` or `.cmd` scripts.
+Source code and issue tracker live on GitHub: [github.com/Maw-YT/batchpp](https://github.com/Maw-YT/batchpp).
 
-## Features (current MVP)
+## The story (super simple)
 
-- `import "file.batpp"` (recursive)
-- `module name`
-- `fn name(args) { ... }` with `return` (functions are emitted as `module__name__<arity>`; default arguments on trailing parameters)
-- `export fn name(...) { }` — required for `othermod::name` calls from another module
-- `macro fn` / `inline fn` — body expanded at call sites (no separate `:label`)
-- Anonymous/local blocks `{ ... }` — emitted with `setlocal` / `endlocal` scope boundaries
-- Bare function calls: `doThing()` or `mod::doThing(arg1, arg2)` (no `call :label` needed)
-- Error handling:
-  - `throw "message"` (or `throw expr`)
-  - `try { ... } catch err { ... }` and optional `finally { ... }` (also `} finally {` after `catch`)
-  - Catch object fields: `%err.code%`, `%err.message%`
-- `assert <batch-condition>` and `assert <batch-condition>, "message"`
-- Loops:
-  - `while <batch-condition> { ... }` with `break` / `continue`
-  - `for i = <from> to <to> { ... }` (numeric)
-  - `for x in listVar { ... }` (`listVar` is a token list variable)
-  - `for x in arr name { ... }` — walks indices `0 .. len-1`, sets `x` from `__arr_name_*`
-- Control flow: `if <batch-condition> { ... }`, optional chains `else if <batch-condition> { ... }`, then optional `else { ... }` (each keyword starts its own line after the closing `}` of the previous branch)
-- `match <discriminator> { case "lit": { ... } default: { ... } }` (discriminator is usually `%var%` or a literal expression)
-- Variables: `let`, `var`, `const` declarations
-- Variable arithmetic updates: `x += 2`, `x -= 1`, `x *= 3`, `x /= 2`
-- Variable increment/decrement: `x++`, `x--`
-- String interpolation: `${name}`, `${arr[0]}`, `${this.field}`, `${len(arr)}`
-- Block comments `/* ... */` (non-nesting); line pragmas `#encoding ...`, `#!batpp`, `#pause-on` (append `pause` before `endlocal`), `#pause-off` (suppress that pause); if both appear across imports, `#pause-off` wins
-- Multiline / raw strings: `""" ... """` (lines merged in preprocessing)
-- `arr name = [a, b, c]`
-- `name.push(value)`
-- `%arrName[index]%` reads; `name[index] = value`; `slice dest = src, start, count`; `len(name)` in expressions
-- `map m = { "key": value, ... }` — keys stored as `__map_m_<key>` and `__map_m_keys`
-- `struct Name { var field = default; ... }` and `st inst = Name()` — fields `__st_inst_field`
-- `enum E { A, B }` — emits `set "E_A=0"`, `E_B=1`, ...
-- String helpers: `let x = str_trim(var)`, `let x = str_contains(var, "sub")`, `let x = str_replace(var, "from", "to")`
-- Input helpers:
-  - `input line` (plain stdin read)
-  - `input line "Prompt: "` (prompted read)
-  - `input? line` (EOF-safe read; sets `__input_ok` to `1` or `0`)
-  - `input? line "Prompt: "` (same with prompt)
-- UCI parsing helpers:
-  - `token cmd = line, 1` (extract Nth space-delimited token)
-  - `after moves = line, " moves "` (substring after marker; empty if missing)
-  - `startswith isGo = line, "go"` (case-insensitive prefix check; sets `1` or `0`)
-- `class Name { var field; fn method() { ... } }`
-- `obj x = new Class(args)`
-- `x.method(args)`
-- `this.field = ...` and `%this.field%` inside methods
+Imagine your computer is a helper that only understands **very old, picky instructions** called batch files. Those instructions work, but writing them by hand is like building a castle out of tiny blocks without a picture on the box.
 
-## Build
+**Batch++** is a friend that sits in the middle. **You** write nicer, clearer code in files that end with `.batpp` or `.cmdpp`. **Batch++** turns that into normal `.bat` or `.cmd` files the computer already knows how to run.
+
+So: you write the easy story, Batch++ whispers the picky version to Windows for you.
+
+## What is this project, really?
+
+This folder holds a small program named **`batppc`** (think “batch plus plus compiler”). It is not magic dust; it is a **translator**. One language in, batch script out.
+
+You can use it for:
+
+- Little tools that fix files or folders  
+- Games or toys that talk through a black window  
+- Anything where you would normally write a long, twisty batch file but wish it looked more like a tiny program  
+
+The big idea is **comfort**: loops, functions, errors you can catch, lists, maps, and other ideas that make long scripts easier to read than plain batch.
+
+## What can Batch++ help you write?
+
+You do **not** need to memorize all of this. Think of it as a toy box full of parts:
+
+- **Pieces that fit together** — `import` pulls in other files; `module` gives them names.  
+- **Named jobs** — `fn` and `export fn` are little recipes you can call again and again.  
+- **Safety nets** — `try` / `catch` / `finally` and `throw` when something goes wrong.  
+- **Repeating and choosing** — `while`, `for`, `if`, `match` so the script can think a bit.  
+- **Boxes for data** — variables, arrays, maps, structs, enums, strings with `${...}` inside.  
+- **Bigger toys** — classes and `new` if you want objects with methods.  
+- **Talking and listening** — helpers for reading lines and prompts when your script needs to ask questions.  
+
+If you want the grown-up list with every knob and switch, open **`docs/language_cheat_sheet.md`**. That is the long, exact version of the toy list.
+
+## How do you “build” the translator?
+
+“Build” means: turn the C++ source in this folder into a real **`batppc.exe`** you can double-click or run from a terminal.
+
+In PowerShell, from this project folder:
 
 ```powershell
 cmake -S . -B build
 cmake --build build --config Release
 ```
 
-## Compile
+When that finishes without yelling errors, you have your translator.
 
-```powershell
-.\build\batppc.exe ".\Uci Engine\uci_engine.batpp" ".\Uci Engine\uci_engine.bat"
-.\build\batppc.exe ".\some_script.cmdpp" ".\some_script.cmd"
-.\build\batppc.exe --debug-echo --emit-header ".\script.batpp" ".\script.bat"
+## The smallest example
+
+Make a file named **`hello.batpp`** next to your project (or anywhere you like) with this inside. Save it as **UTF-8 without a BOM** (or plain ASCII) so the first line does not get a hidden character that confuses `cmd.exe`.
+
+```text
+module hello
+
+fn main() {
+  let x = 42
+  return 0
+}
+
+main()
 ```
 
-Then run:
+Then turn it into a batch file and run it:
 
 ```powershell
-cmd /c ".\Uci Engine\uci_engine.bat < .\Uci Engine\uci_input_cmd_full.txt"
+.\build\batppc.exe ".\hello.batpp" ".\hello.bat"
+cmd /c ".\hello.bat"
 ```
 
-## UCI Engine Example
+So: **Batch++ writes `hello.bat`**; **Windows runs `hello.bat`**. Change the paths if your files live somewhere else.
 
-A toy UCI chess engine source is included:
+## More reading (when you want details, not stories)
 
-- Source: `Uci Engine/uci_engine.batpp`
-- Generated batch: `Uci Engine/uci_engine.bat`
+- **`docs/style_guide.md`** — how we like Batch++ source to look.  
+- **`docs/language_cheat_sheet.md`** — all the language bits in one place.  
+- **`docs/lexical_rules.md`** — the picky spelling rules for names and symbols.  
 
-Compile it with:
+## Honest small print (still simple)
 
-```powershell
-.\build\batppc.exe ".\Uci Engine\uci_engine.batpp" ".\Uci Engine\uci_engine.bat"
-```
+- Batch++ is a **useful work-in-progress**, not a perfect robot that catches every mistake.  
+- Some things work best if you put function calls on their own line inside `if` blocks—see the cheat sheet for the picky cases.  
+- Curly braces `{` `}` in your code are counted carefully; do not hide them inside strings in sneaky ways.  
 
-Current UCI commands handled:
-
-- `uci`
-- `isready`
-- `ucinewgame`
-- `position startpos moves ...`
-- `go depth N`
-- `stop`
-- `quit`
-
-Redirected test tip (Windows):
-
-- Create test input as ASCII/ANSI text for `cmd.exe` parsing (for example: `Set-Content -Encoding ascii` in PowerShell, or `echo ... > file` via `cmd /c`).
-
-## Tests
-
-```powershell
-.\build\batppc.exe ".\tests\syntax_all.batpp" ".\tests\syntax_all.bat"
-cmd /c ".\tests\syntax_all.bat"
-.\tests\run_negative_diagnostics.ps1
-.\tests\run_parser_maintainability_checks.ps1
-.\tests\run_golden_suite.ps1
-```
-
-## Formatting/style
-
-- Batch++ source formatting conventions are documented in `docs/style_guide.md`.
-- Language construct/limitation overview is in `docs/language_cheat_sheet.md`.
-
-## Notes
-
-- This is a practical MVP transpiler, not a fully strict parser yet.
-- Arithmetic assignment compiles to `set /a` in batch.
-- Function calls inside conditionals should be placed on their own line inside a block, e.g. `if ... ( doThing() )`.
-- Braces in `fn` / `struct` / `match` / control blocks are tracked per-line (`{` / `}` counts); put `{` / `}` inside strings carefully.
-- `input?` is useful for real-time protocols (like UCI) where piped stdin may end; check `%__input_ok%`.
-- Lexical identifier/operator rules are centralized in `docs/lexical_rules.md`.
-- UCI helper example:
-  - `token cmd = line, 1`
-  - `startswith isPos = line, "position"`
-  - `after moveTail = line, " moves "`
+Have fun. Start small, run the `.bat` you made, and grow your scripts a little at a time.
